@@ -8,3 +8,4 @@ torch==2.2.1
 pymongo[srv]
 certifi
 huggingface_hub==0.11.1
+streamlit==1.45.1
