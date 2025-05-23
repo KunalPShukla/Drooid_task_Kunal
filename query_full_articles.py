@@ -1,5 +1,3 @@
-# query_full_articles.py
-
 import faiss
 import numpy as np
 import pickle
