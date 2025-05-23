@@ -4,31 +4,26 @@ import numpy as np
 import pickle
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from langchain.prompts import PromptTemplate
 import torch
 
 # Page configuration
 st.set_page_config(page_title="News QA Assistant", layout="wide")
 st.title("News Question Answering Assistant")
 
-# Load precomputed FAISS index and documents (uploaded via Streamlit Cloud)
+# Load FAISS index and articles
 @st.cache_resource
 def load_index_and_documents():
     try:
         index = faiss.read_index("faiss_full_articles.index")
-    except Exception as e:
-        st.error("Failed to load FAISS index. Make sure it is uploaded to Streamlit Cloud.")
-        st.stop()
-    
-    try:
         with open("full_articles.pkl", "rb") as f:
             documents = pickle.load(f)
+        return index, documents
     except Exception as e:
-        st.error("Failed to load article documents. Make sure full_articles.pkl is uploaded.")
+        st.error(f"Error loading data: {e}")
         st.stop()
 
-    return index, documents
-
-# Load embedding model and language model (Flan-T5)
+# Load models
 @st.cache_resource
 def load_models():
     embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
@@ -36,34 +31,42 @@ def load_models():
     model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
     return embedder, tokenizer, model
 
-# Load resources
 index, documents = load_index_and_documents()
 embedder, tokenizer, model = load_models()
 
-# Input box
-query = st.text_input("Ask a question based on recent news articles (e.g. What did Sanjay Raut say?)")
+# Input
+query = st.text_input("Ask a question from the news articles:")
+use_top1_only = st.checkbox("Use only top-1 most relevant article", value=False)
 
-# Run pipeline
 if query:
-    # Embed query and search in FAISS
+    # Embed and retrieve
     query_embedding = embedder.encode([query]).astype("float32")
     D, I = index.search(query_embedding, k=3)
     retrieved_docs = [documents[i].page_content for i in I[0]]
     titles = [documents[i].metadata.get("title", "Unknown") for i in I[0]]
 
-    # Construct context and prompt
-    context = "\n\n---\n\n".join(retrieved_docs)
-    prompt = f"""You are a helpful assistant. Answer the question using the context below.
+    # Choose context
+    if use_top1_only:
+        combined_context = retrieved_docs[0]
+    else:
+        combined_context = "\n\n---\n\n".join(retrieved_docs)
+
+    # Better prompt formatting
+    template = PromptTemplate(
+        input_variables=["context", "question"],
+        template="""You are a highly knowledgeable investigative assistant. Answer the question with clarity and completeness using only the context below.
 
 Context:
 {context}
 
 Question:
-{query}
+{question}
 
 Answer:"""
+    )
+    prompt = template.format(context=combined_context, question=query)
 
-    # Generate answer using Flan-T5
+    # Generate answer
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
     with torch.no_grad():
         outputs = model.generate(
@@ -72,12 +75,12 @@ Answer:"""
             num_beams=4,
             early_stopping=True
         )
-    answer = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
     # Display results
-    st.markdown("### Source Titles:")
+    st.markdown("### Top Source Titles:")
     for t in titles:
-        st.write("- " + t)
-
+        st.markdown(f"- {t}")
+    
     st.markdown("### Answer:")
-    st.success(answer)
+    st.success(response)
