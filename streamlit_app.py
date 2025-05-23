@@ -4,7 +4,6 @@ import numpy as np
 import pickle
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from langchain_core.prompts import PromptTemplate
 import torch
 
 # Page configuration
@@ -20,10 +19,10 @@ def load_index_and_documents():
             documents = pickle.load(f)
         return index, documents
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.error(f"Error loading FAISS index or documents: {e}")
         st.stop()
 
-# Load models
+# Load embedding and QA models
 @st.cache_resource
 def load_models():
     embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
@@ -31,42 +30,41 @@ def load_models():
     model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
     return embedder, tokenizer, model
 
+# Load all resources
 index, documents = load_index_and_documents()
 embedder, tokenizer, model = load_models()
 
-# Input
+# UI: Query input
 query = st.text_input("Ask a question from the news articles:")
 use_top1_only = st.checkbox("Use only top-1 most relevant article", value=False)
 
 if query:
-    # Embed and retrieve
+    # Embed query and search index
     query_embedding = embedder.encode([query]).astype("float32")
     D, I = index.search(query_embedding, k=3)
+
+    # Retrieve documents
     retrieved_docs = [documents[i].page_content for i in I[0]]
     titles = [documents[i].metadata.get("title", "Unknown") for i in I[0]]
 
-    # Choose context
+    # Choose context (single or multi-document)
     if use_top1_only:
         combined_context = retrieved_docs[0]
     else:
         combined_context = "\n\n---\n\n".join(retrieved_docs)
 
-    # Better prompt formatting
-    template = PromptTemplate(
-        input_variables=["context", "question"],
-        template="""You are a highly knowledgeable investigative assistant. Answer the question with clarity and completeness using only the context below.
+    # Create prompt manually (no PromptTemplate needed)
+    prompt = f"""You are a highly knowledgeable investigative assistant. Answer the question with clarity and completeness using only the context below.
 
 Context:
-{context}
+{combined_context}
 
 Question:
-{question}
+{query}
 
 Answer:"""
-    )
-    prompt = template.format(context=combined_context, question=query)
 
-    # Generate answer
+    # Generate response
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
     with torch.no_grad():
         outputs = model.generate(
@@ -77,10 +75,10 @@ Answer:"""
         )
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-    # Display results
+    # Display sources and answer
     st.markdown("### Top Source Titles:")
     for t in titles:
         st.markdown(f"- {t}")
-    
+
     st.markdown("### Answer:")
     st.success(response)
