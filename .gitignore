@@ -1,0 +1,8 @@
+venv
+Explanation.docx
+newsarticle.json
+Drooid_task.ipynb
+full_articles.pkl
+faiss_full_articles.index
+__pycache__
+.ipynb_checkpoints
