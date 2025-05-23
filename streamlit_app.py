@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 import torch
 
 # Page configuration
