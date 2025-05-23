@@ -1,0 +1,2 @@
+full_articles.pkl filter=lfs diff=lfs merge=lfs -text
+faiss_full_articles.index filter=lfs diff=lfs merge=lfs -text
